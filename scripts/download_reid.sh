@@ -3,13 +3,14 @@
 # Requires NGC CLI authenticated, or NGC_API_KEY env var.
 set -euo pipefail
 
-DEST="$(cd "$(dirname "$0")/../models/reid" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEST="${SCRIPT_DIR}/../models/reid"
+mkdir -p "$DEST"
+DEST="$(cd "$DEST" && pwd)"
 MODEL_VERSION="deployable_v1.0"
 ETLT_FILE="resnet50_market1501.etlt"
 NGC_MODEL="nvidia/tao/reidentificationnet:${MODEL_VERSION}"
 NGC_API="https://api.ngc.nvidia.com/v2/models/nvidia/tao/reidentificationnet/versions/${MODEL_VERSION}/files"
-
-mkdir -p "$DEST"
 
 if [ -f "${DEST}/${ETLT_FILE}" ]; then
   echo "[info] ${ETLT_FILE} already present in ${DEST}, skipping."
