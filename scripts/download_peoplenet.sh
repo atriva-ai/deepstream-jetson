@@ -7,13 +7,14 @@
 
 set -euo pipefail
 
-DEST="$(cd "$(dirname "$0")/../models/peoplenet" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEST="${SCRIPT_DIR}/../models/peoplenet"
+mkdir -p "$DEST"
+DEST="$(cd "$DEST" && pwd)"
 MODEL_VERSION="pruned_quantized_decrypted_v2.3.3"
 ONNX_FILE="resnet34_peoplenet_int8.onnx"
 NGC_MODEL="nvidia/tao/peoplenet:${MODEL_VERSION}"
 NGC_API="https://api.ngc.nvidia.com/v2/models/nvidia/tao/peoplenet/versions/${MODEL_VERSION}/files"
-
-mkdir -p "$DEST"
 
 if [ -f "${DEST}/${ONNX_FILE}" ]; then
   echo "[info] ${ONNX_FILE} already present in ${DEST}, skipping download."
