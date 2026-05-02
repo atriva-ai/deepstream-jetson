@@ -3,3 +3,4 @@ uvicorn[standard]>=0.29.0
 pyzmq>=25.0
 numpy>=1.21
 pyyaml>=6.0
+python-multipart>=0.0.9
