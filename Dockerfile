@@ -1,7 +1,7 @@
 # Platform: NVIDIA Jetson — JetPack 5.x, DeepStream 6.2
 # Builds C++ core_engine + Python FastAPI control plane in one image.
 # Base image: DeepStream 6.2 Triton (ARM64 / aarch64)
-FROM nvcr.io/nvidia/deepstream:6.2-triton-multiarch
+FROM nvcr.io/nvidia/deepstream-l4t:6.2-triton
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
