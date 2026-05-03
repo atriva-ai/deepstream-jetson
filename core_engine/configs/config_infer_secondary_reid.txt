@@ -16,11 +16,12 @@ operate-on-class-ids=0
 # ReID model — ResNet50 (Market-1501 + AI City Challenge 156, 256-dim embeddings)
 # Download: scripts/download_reid.sh (NGC: nvidia/tao/reidentificationnet:deployable_v1.2)
 # MUST be downloaded on the host before running docker compose up --build.
-# Path is relative to this config file's directory (configs/) — one level up reaches models/.
+# ../../models/ resolves to /workspace/models/ in Docker and services/deepstream-jetson/models/
+# in standalone mode — same physical directory in both cases.
 # Input:  3 × 256 × 128  (C × H × W, RGB)
 # Output: 256-dim BN-normalised embedding (fc_pred layer), read from NvDsInferTensorMeta
-onnx-file=../models/reid/resnet50_market1501_aicity156.onnx
-model-engine-file=../models/reid/resnet50_market1501_aicity156.onnx_b8_gpu0_fp16.engine
+onnx-file=../../models/reid/resnet50_market1501_aicity156.onnx
+model-engine-file=../../models/reid/resnet50_market1501_aicity156.onnx_b8_gpu0_fp16.engine
 
 # ImageNet preprocessing: (pixel - mean) * scale
 # Without these, all embeddings cluster near cosine-sim 0.875 with no discrimination.
