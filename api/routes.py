@@ -1,7 +1,8 @@
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Form, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .camera_registry import CameraRegistry
 from .detection_store import DetectionStore
@@ -203,15 +204,44 @@ def make_router(
         }
 
     @router.get("/api/v1/video-pipeline/latest-frame/")
-    def vp_latest_frame(camera_id: str):
-        """DeepStream does not serve raw frame images over HTTP.
+    async def vp_latest_frame(camera_id: str):
+        """Grab a single JPEG frame from the camera RTSP stream via ffmpeg.
 
-        The backend falls back gracefully when this returns 503.
+        Runs on-demand (no GPU, no DeepStream involvement). Latency ~1-3s
+        depending on I-frame interval. Returns 404 if camera not registered,
+        503 if capture times out or ffmpeg fails.
         """
-        raise HTTPException(
-            status_code=503,
-            detail="Raw frame serving not supported on Jetson/DeepStream. Use detections/latest instead.",
-        )
+        rtsp_url = registry.get_rtsp_url(camera_id)
+        if not rtsp_url:
+            raise HTTPException(status_code=404, detail=f"Camera {camera_id} not registered")
+
+        cmd = [
+            "ffmpeg", "-loglevel", "error",
+            "-rtsp_transport", "tcp",
+            "-i", rtsp_url,
+            "-frames:v", "1",
+            "-f", "image2",
+            "-q:v", "2",
+            "pipe:1",
+        ]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8.0)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            raise HTTPException(status_code=503, detail="Frame capture timed out")
+
+        if proc.returncode != 0 or not stdout:
+            raise HTTPException(status_code=503, detail="Frame capture failed")
+
+        return Response(content=stdout, media_type="image/jpeg")
 
     @router.post("/api/v1/video-pipeline/video-info-url/")
     def vp_video_info_url(url: str = Form(...)):

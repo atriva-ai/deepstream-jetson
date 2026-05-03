@@ -100,41 +100,57 @@ Target hardware: **NVIDIA Jetson Orin NX** — JetPack 5.x (L4T R35), CUDA 11.4,
 
 ## Quick Start
 
-### Prerequisites
+> **Docker users — read this first.**
+>
+> The Docker image copies models from the host at build time. You must download the
+> models **before** running `docker compose up --build`. This is a one-time step per
+> device; once models are in `models/`, subsequent builds and restarts are fast.
+
+### 1. Download models (one-time, on the host)
 
 ```bash
-# JetPack 5.x provides CUDA, TensorRT, cuDNN — skip if already on Jetson
-# GStreamer dev headers
-sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libyaml-cpp-dev
-
-# Phase 2 (ZeroMQ)
-./scripts/install_deps_phase2.sh
-
-# Python tools for ReID model export
-pip3 install torchreid gdown
-```
-
-### 1. Download models
-
-```bash
-# PeopleNet (Phase 1) — NGC account or API key required
+# PeopleNet — requires NGC_API_KEY (get one free at ngc.nvidia.com)
+export NGC_API_KEY=<your_key>
 ./scripts/download_peoplenet.sh
+# → models/peoplenet/resnet34_peoplenet_int8.onnx
 
-# ReID — ResNet50 ONNX downloaded directly (no NGC account needed)
-# Place resnet50_market1501_aicity156.onnx in models/reid/
-# TRT engine is auto-built on first run (~3 min on Orin NX)
+# ReID — ResNet50 ONNX (deployable_v1.2), also requires NGC_API_KEY
+./scripts/download_reid.sh
+# → models/reid/resnet50_market1501_aicity156.onnx
 ```
 
-### 2. Build
+Both scripts are idempotent — safe to re-run; they skip files that already exist.
+
+TRT `.engine` files are **not** downloaded — they are auto-generated on first container
+start (~3–5 min on Orin NX) and written back to `models/` alongside the ONNX files.
+Subsequent starts load the cached engines instantly.
+
+### 2. Build and run with Docker (recommended)
 
 ```bash
+# From the repo root:
+docker compose -f docker-compose.jetson.yml up --build
+```
+
+The `deepstream_service` container mounts `services/deepstream-jetson/models/` directly,
+so the ONNX files you just downloaded are available at `/workspace/core_engine/models/`
+inside the container. On first run, nvinfer builds TRT engines from those ONNX files and
+writes them back to the same host directory.
+
+### 3. Build manually (without Docker)
+
+```bash
+# System deps
+sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libyaml-cpp-dev
+./scripts/install_deps_phase2.sh   # ZeroMQ
+
 cd core_engine
 mkdir -p build && cd build
 cmake ..
 make -j$(nproc)
 ```
 
-### 3. Run
+### 4. Run manually
 
 ```bash
 # Terminal 1 — inference pipeline

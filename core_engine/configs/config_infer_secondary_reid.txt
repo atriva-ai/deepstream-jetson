@@ -3,20 +3,30 @@ gpu-id=0
 
 # Secondary GIE: runs on each person crop produced by the primary GIE.
 # process-mode=2 → secondary (object-level)
-# operate-on-gie-id=1 → process objects detected by the primary GIE (PeopleNet)
-# operate-on-class-ids=0 → person class only
+# operate-on-class-ids=0 → person class only (class 0 = person in peoplenet_labels.txt)
+#
+# NOTE: operate-on-gie-id is intentionally absent.
+# NvDCF reassigns unique_component_id on most tracked objects, so objects
+# no longer carry gie-id=1 after tracking — they would silently skip SGIE
+# inference and coverage would drop to ~5%. Removing this key causes SGIE
+# to run on all objects regardless of which GIE detected them.
 process-mode=2
-operate-on-gie-id=1
 operate-on-class-ids=0
 
-# ReID model — OSNet-x1.0 (Market-1501, 512-dim embeddings)
-# Export: scripts/export_reid_onnx.py
+# ReID model — ResNet50 (Market-1501 + AI City Challenge 156, 256-dim embeddings)
+# Download: scripts/download_reid.sh (NGC: nvidia/tao/reidentificationnet:deployable_v1.2)
+# MUST be downloaded on the host before running docker compose up --build.
+# ../../models/ resolves to /workspace/models/ in Docker and services/deepstream-jetson/models/
+# in standalone mode — same physical directory in both cases.
 # Input:  3 × 256 × 128  (C × H × W, RGB)
-# Output: 512-dim L2-normalised embedding vector
-onnx-file=../../models/reid/osnet_x1_0_market1501.onnx
-model-engine-file=../../models/reid/osnet_x1_0_market1501.onnx_b8_gpu0_fp16.engine
+# Output: 256-dim BN-normalised embedding (fc_pred layer), read from NvDsInferTensorMeta
+onnx-file=../../models/reid/resnet50_market1501_aicity156.onnx
+model-engine-file=../../models/reid/resnet50_market1501_aicity156.onnx_b8_gpu0_fp16.engine
 
-net-scale-factor=0.0039215697906911373
+# ImageNet preprocessing: (pixel - mean) * scale
+# Without these, all embeddings cluster near cosine-sim 0.875 with no discrimination.
+net-scale-factor=0.017352607709750568
+offsets=123.675;116.28;103.53
 model-color-format=0
 infer-dims=3;256;128
 
@@ -24,13 +34,12 @@ infer-dims=3;256;128
 network-mode=2
 
 # batch-size: max person crops processed per inference call.
-# Set to the maximum number of persons expected across all camera frames in one batch.
 batch-size=8
 
-# network-type=1 (classifier) so DeepStream allocates NvDsClassifierMeta;
-# output-tensor-meta=1 additionally attaches raw tensors to NvDsObjectMeta
-# so the pad probe can read the embedding float array directly.
-network-type=1
+# network-type=100 (OTHER) + output-tensor-meta=1: bypasses classifier path and
+# attaches raw float tensors to NvDsObjectMeta for pad-probe access to 256-d embeddings.
+# Do NOT use network-type=1 (classifier) — it misinterprets embedding output as logits.
+network-type=100
 output-tensor-meta=1
 
 # gie-unique-id must match kReidGieId in pipeline.cpp (currently 2)
