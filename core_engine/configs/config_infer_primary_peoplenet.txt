@@ -6,11 +6,13 @@ net-scale-factor=0.0039215697906911373
 model-color-format=0
 
 # Model files — paths relative to THIS config file's directory (configs/).
-# ONNX lives at repo root models/peoplenet/ (see scripts/download_peoplenet.sh).
-onnx-file=../../models/peoplenet/resnet34_peoplenet_int8.onnx
+# In Docker: models/ is at /workspace/core_engine/models/ — one level up from configs/.
+# On host:   models/ is at services/deepstream-jetson/models/ — also one level up.
+# Download via scripts/download_peoplenet.sh before building the Docker image.
+onnx-file=../models/peoplenet/resnet34_peoplenet_int8.onnx
 # Engine filename must match what TRT auto-generates: <onnx>_b<batch>_gpu<id>_<precision>.engine
 # Without an INT8 calibration table, TRT falls back to FP16 and uses this exact name.
-model-engine-file=../../models/peoplenet/resnet34_peoplenet_int8.onnx_b1_gpu0_fp16.engine
+model-engine-file=../models/peoplenet/resnet34_peoplenet_int8.onnx_b1_gpu0_fp16.engine
 labelfile-path=../configs/peoplenet_labels.txt
 
 # network-mode: 0=FP32, 1=INT8, 2=FP16
