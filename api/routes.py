@@ -1,4 +1,8 @@
 import asyncio
+import glob
+import os
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Form, HTTPException
@@ -203,45 +207,76 @@ def make_router(
             "architecture": ARCHITECTURE,
         }
 
+    _OSD_MKV = Path("/tmp/reid_annotated.mkv")
+
     @router.get("/api/v1/video-pipeline/latest-frame/")
     async def vp_latest_frame(camera_id: str):
-        """Grab a single JPEG frame from the camera RTSP stream via ffmpeg.
+        """Extract a JPEG thumbnail from the running DeepStream OSD recording.
 
-        Runs on-demand (no GPU, no DeepStream involvement). Latency ~1-3s
-        depending on I-frame interval. Returns 404 if camera not registered,
-        503 if capture times out or ffmpeg fails.
+        Reads /tmp/reid_annotated.mkv (written continuously by the pipeline)
+        via gst-launch-1.0 + nvv4l2decoder → jpegenc → multifilesink.
+        Returns 404 if camera not registered or pipeline not yet running.
         """
-        rtsp_url = registry.get_rtsp_url(camera_id)
-        if not rtsp_url:
+        if not registry.get_rtsp_url(camera_id):
             raise HTTPException(status_code=404, detail=f"Camera {camera_id} not registered")
 
+        if not manager.is_alive() or not _OSD_MKV.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Frame snapshot not available for this camera backend",
+            )
+
+        tmp_dir = tempfile.mkdtemp(prefix="ds_snap_")
+        frame_pattern = os.path.join(tmp_dir, "%05d.jpg")
+
         cmd = [
-            "ffmpeg", "-loglevel", "error",
-            "-rtsp_transport", "tcp",
-            "-i", rtsp_url,
-            "-frames:v", "1",
-            "-f", "image2",
-            "-q:v", "2",
-            "pipe:1",
+            "gst-launch-1.0", "-e",
+            "filesrc", f"location={_OSD_MKV}",
+            "!", "matroskademux",
+            "!", "h264parse",
+            "!", "nvv4l2decoder",
+            "!", "nvvideoconvert",
+            "!", "video/x-raw,format=I420",
+            "!", "jpegenc", "quality=85",
+            "!", "multifilesink", f"location={frame_pattern}", "max-files=1",
         ]
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8.0)
+            await asyncio.wait_for(proc.communicate(), timeout=5.0)
         except asyncio.TimeoutError:
+            if proc:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+        frames = sorted(glob.glob(os.path.join(tmp_dir, "*.jpg")))
+        if not frames:
             try:
-                proc.kill()
+                os.rmdir(tmp_dir)
             except Exception:
                 pass
-            raise HTTPException(status_code=503, detail="Frame capture timed out")
-
-        if proc.returncode != 0 or not stdout:
             raise HTTPException(status_code=503, detail="Frame capture failed")
 
-        return Response(content=stdout, media_type="image/jpeg")
+        with open(frames[-1], "rb") as f:
+            jpeg_bytes = f.read()
+
+        for fp in frames:
+            try:
+                os.unlink(fp)
+            except Exception:
+                pass
+        try:
+            os.rmdir(tmp_dir)
+        except Exception:
+            pass
+
+        return Response(content=jpeg_bytes, media_type="image/jpeg")
 
     @router.post("/api/v1/video-pipeline/video-info-url/")
     def vp_video_info_url(url: str = Form(...)):
